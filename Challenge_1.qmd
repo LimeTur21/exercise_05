@@ -1,0 +1,280 @@
+---
+title: "Exercise 05"
+format: html
+---
+```{r setup, include= FALSE}
+knitr::opts_chunk$set(warning= FALSE, message= FALSE)
+```
+## Challenge 1
+
+### load libraries
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+```
+
+### loading in dataset as tibble
+```{r}
+x <- "https://raw.githubusercontent.com/LimeTur21/exercise_05/main/IMDB-movies.csv"
+d <- as.tibble(read_csv(x, col_names= TRUE ))
+```
+
+### filtering dataset and adding 'decade' column
+```{r}
+d <- d |>
+  filter((startYear>= 1920 & startYear<= 1979)) |>
+  filter((runtimeMinutes>= 60 & runtimeMinutes<= 180)) |>
+  mutate(decade= case_when(
+    (startYear>= 1920 & startYear<= 1929) ~ "20s",
+    (startYear>= 1930 & startYear<= 1939) ~ "30s",
+    (startYear>= 1940 & startYear<= 1949) ~ "40s",
+    (startYear>= 1950 & startYear<= 1959) ~ "50s",
+    (startYear>= 1960 & startYear<= 1969) ~ "60s",
+    (startYear>= 1970 & startYear<= 1979) ~ "70s"
+  ))
+```
+
+### runtimeMinutes distribution histograms by decade
+```{r}
+runtimexdecade <- ggplot(d, aes(x= runtimeMinutes,
+                                color= decade,
+                                fill= decade)) +
+  geom_histogram() +
+  facet_wrap(vars(decade))
+runtimexdecade
+```
+
+### new dataframe called 'results' that stores population mean and sd for 'runtimeMinutes'
+```{r}
+results <- summarise(group_by(d, decade), 
+                     n_cases= n(), 
+                     mu= mean(runtimeMinutes), 
+                     sd= sd(runtimeMinutes), 
+                     se= (sd/sqrt(n_cases)))
+```
+
+### 100 samples from each decade with mean and sd reported
+```{r}
+nsample <- 100
+samples <- d |>
+  group_by(decade) |>
+  slice_sample(n= nsample, replace = FALSE) |>
+  summarise(n_cases= n(), 
+            mu_est= mean(runtimeMinutes), 
+            sd_est= sd(runtimeMinutes), 
+            se_samp= (sd_est/sqrt(nsample)))
+```
+
+### comparing population mu, sd, & se to sample stats
+```{r}
+compare <- tibble(decade= samples$decade,
+                  pop_mu= results$mu, 
+                  samp_mu= samples$mu_est, 
+                  pop_sd= results$sd, 
+                  samp_sd= samples$sd_est, 
+                  pop_se= results$se, 
+                  samp_se= samples$se_samp)
+compare
+```
+
+### generating sampling distributions
+```{r}
+n_boot <- 1000 # number of permutations
+boot_d <- d |> # creating a version of 'd' that only includes 'decade' and 'runtimeMinutes'
+  group_by(decade) |>
+  select(tconst, decade, runtimeMinutes) |>
+  spread(key= decade, value= runtimeMinutes)
+```
+
+### empty lists to individually store 'runtimeMinutes' values by 'decade'
+```{r}
+boot_dist20 <- list()
+boot_dist30 <- list()
+boot_dist40 <- list()
+boot_dist50 <- list()
+boot_dist60 <- list()
+boot_dist70 <- list()
+```
+
+### subsetting decade-specific tibble to remove rows with 'NA'
+```{r}
+samp20 <- boot_d |>
+  select(2) |>
+  subset(!is.na(boot_d[,2]))
+
+samp30 <- boot_d |>
+  select(3) |>
+  subset(!is.na(boot_d[,3]))
+
+samp40 <- boot_d |>
+  select(4) |>
+  subset(!is.na(boot_d[,4]))
+
+samp50 <- boot_d |>
+  select(5) |>
+  subset(!is.na(boot_d[,5]))
+
+samp60 <- boot_d |>
+  select(6) |>
+  subset(!is.na(boot_d[,6]))
+
+samp70 <- boot_d |>
+  select(7) |>
+  subset(!is.na(boot_d[,7]))
+```
+
+### creating bootstrapped distributions of 1000 samples of 100 movies for each decade
+```{r}
+for (i in 1:n_boot){
+  boot_dist20[[i]] <- samp20 |>
+    slice_sample(n= nsample, replace= FALSE)
+  boot_dist30[[i]] <- samp30 |>
+    slice_sample(n= nsample, replace= FALSE)
+  boot_dist40[[i]] <- samp40 |>
+    slice_sample(n= nsample, replace= FALSE)
+  boot_dist50[[i]] <- samp50 |>
+    slice_sample(n= nsample, replace= FALSE)
+  boot_dist60[[i]] <- samp60 |>
+    slice_sample(n= nsample, replace= FALSE)
+  boot_dist70[[i]] <- samp70 |>
+    slice_sample(n= nsample, replace= FALSE)
+}
+```
+
+### turning samples into sample means and returning those means to creating a bootstrapped sampling distribution of sample means
+```{r}
+for (i in 1:n_boot){
+  boot_dist20[[i]]["sd"] <- sd(unlist(boot_dist20[[i]][1]))
+  boot_dist30[[i]]["sd"] <- sd(unlist(boot_dist30[[i]][1]))
+  boot_dist40[[i]]["sd"] <- sd(unlist(boot_dist40[[i]][1]))
+  boot_dist50[[i]]["sd"] <- sd(unlist(boot_dist50[[i]][1]))
+  boot_dist60[[i]]["sd"] <- sd(unlist(boot_dist60[[i]][1]))
+  boot_dist70[[i]]["sd"] <- sd(unlist(boot_dist70[[i]][1]))
+  
+  boot_dist20[[i]][["mean"]] <- sum(boot_dist20[[i]][1])/nsample
+  boot_dist30[[i]][["mean"]] <- sum(boot_dist30[[i]][1])/nsample
+  boot_dist40[[i]][["mean"]] <- sum(boot_dist40[[i]][1])/nsample
+  boot_dist50[[i]][["mean"]] <- sum(boot_dist50[[i]][1])/nsample
+  boot_dist60[[i]][["mean"]] <- sum(boot_dist60[[i]][1])/nsample
+  boot_dist70[[i]][["mean"]] <- sum(boot_dist70[[i]][1])/nsample
+}
+```
+
+### create empty vectors for means and standard deviations of boostrapped sampling distribution of sample means
+```{r}
+boot_dist20_means <- vector()
+boot_dist30_means <- vector()
+boot_dist40_means <- vector()
+boot_dist50_means <- vector()
+boot_dist60_means <- vector()
+boot_dist70_means <- vector()
+
+boot_dist20_sds <- vector()
+boot_dist30_sds <- vector()
+boot_dist40_sds <- vector()
+boot_dist50_sds <- vector()
+boot_dist60_sds <- vector()
+boot_dist70_sds <- vector()
+```
+
+### filling in boostrapped sampling distributions of means and sds for each decade
+```{r}
+for (i in 1:n_boot){
+  boot_dist20_means[[i]] <- boot_dist20[[i]][["mean"]][[1]]
+  boot_dist30_means[[i]] <- boot_dist30[[i]][["mean"]][[1]]
+  boot_dist40_means[[i]] <- boot_dist40[[i]][["mean"]][[1]]
+  boot_dist50_means[[i]] <- boot_dist50[[i]][["mean"]][[1]]
+  boot_dist60_means[[i]] <- boot_dist60[[i]][["mean"]][[1]]
+  boot_dist70_means[[i]] <- boot_dist70[[i]][["mean"]][[1]]
+  
+  boot_dist20_sds[[i]] <- boot_dist20[[i]][["sd"]][[1]]
+  boot_dist30_sds[[i]] <- boot_dist30[[i]][["sd"]][[1]]
+  boot_dist40_sds[[i]] <- boot_dist40[[i]][["sd"]][[1]]
+  boot_dist50_sds[[i]] <- boot_dist50[[i]][["sd"]][[1]]
+  boot_dist60_sds[[i]] <- boot_dist60[[i]][["sd"]][[1]]
+  boot_dist70_sds[[i]] <- boot_dist70[[i]][["sd"]][[1]]
+}
+```
+
+### calculating means and sds of each boostrapped sampling distribution of sample means
+```{r}
+meanof_boot_dist20_means <- mean(boot_dist20_means)
+meanof_boot_dist30_means <- mean(boot_dist30_means)
+meanof_boot_dist40_means <- mean(boot_dist40_means)
+meanof_boot_dist50_means <- mean(boot_dist50_means)
+meanof_boot_dist60_means <- mean(boot_dist60_means)
+meanof_boot_dist70_means <- mean(boot_dist70_means)
+
+sdof_boot_dist20_means<- sd(boot_dist20_means)
+sdof_boot_dist30_means<- sd(boot_dist30_means)
+sdof_boot_dist40_means<- sd(boot_dist40_means)
+sdof_boot_dist50_means<- sd(boot_dist50_means)
+sdof_boot_dist60_means<- sd(boot_dist60_means)
+sdof_boot_dist70_means<- sd(boot_dist70_means)
+```
+
+### creating histograms to show boostrapped sampling distributions of sample means for each decade
+```{r}
+hist20 <- hist(boot_dist20_means, 
+               xlab= "Bootstrapped Sample Runtime Means (min)", 
+               main= "Boostrapped Sampling Distribution of Sample Runtime Means (20s)")
+abline(v= meanof_boot_dist20_means, col= 'red', lwd= 3)
+hist30 <- hist(boot_dist30_means, 
+               xlab= "Bootstrapped Sample Runtime Means (min)", 
+               main= "Boostrapped Sampling Distribution of Sample Runtime Means (30s)")
+abline(v= meanof_boot_dist30_means, col= 'red', lwd= 3)
+hist40 <- hist(boot_dist40_means, 
+               xlab= "Bootstrapped Sample Runtime Means (min)", 
+               main= "Boostrapped Sampling Distribution of Sample Runtime Means (40s)")
+abline(v= meanof_boot_dist40_means, col= 'red', lwd= 3)
+hist50 <- hist(boot_dist50_means, 
+               xlab= "Bootstrapped Sample Runtime Means (min)", 
+               main= "Boostrapped Sampling Distribution of Sample Runtime Means (50s)")
+abline(v= meanof_boot_dist50_means, col= 'red', lwd= 3)
+hist60 <- hist(boot_dist60_means, 
+               xlab= "Bootstrapped Sample Runtime Means (min)", 
+               main= "Boostrapped Sampling Distribution of Sample Runtime Means (60s)")
+abline(v= meanof_boot_dist60_means, col= 'red', lwd= 3)
+hist70 <- hist(boot_dist70_means, 
+               xlab= "Bootstrapped Sample Runtime Means (min)", 
+               main= "Boostrapped Sampling Distribution of Sample Runtime Means (70s)")
+abline(v= meanof_boot_dist70_means, col= 'red', lwd= 3)
+```
+
+### standard error comparisons for each decade
+```{r}
+se20_first_samp <- (boot_dist20_sds[1]/sqrt(nsample))
+se30_first_samp <- (boot_dist30_sds[1]/sqrt(nsample))
+se40_first_samp <- (boot_dist40_sds[1]/sqrt(nsample))
+se50_first_samp <- (boot_dist50_sds[1]/sqrt(nsample))
+se60_first_samp <- (boot_dist60_sds[1]/sqrt(nsample))
+se70_first_samp <- (boot_dist70_sds[1]/sqrt(nsample))
+
+se_boot20 <- (mean(boot_dist20_sds)/sqrt(nsample))
+se_boot30 <- (mean(boot_dist30_sds)/sqrt(nsample))
+se_boot40 <- (mean(boot_dist40_sds)/sqrt(nsample))
+se_boot50 <- (mean(boot_dist50_sds)/sqrt(nsample))
+se_boot60 <- (mean(boot_dist60_sds)/sqrt(nsample))
+se_boot70 <- (mean(boot_dist70_sds)/sqrt(nsample))
+```
+
+### adding se calculations to a tibble for comparison
+#### pop_se_samp100 is the calculated se based on the population sd and a sample size of 100
+#### samp_se is the calculated se based on the sd of the first 100-movie sample for each decade and a sample size of 100
+#### boot_se is the calculated se based on the mean sd of the boostrapped sampling distributions of sample sds for each decade and a sample size of 100
+```{r}
+compare_se <- tibble(decade= compare$decade,
+                     pop_se_100samp= (compare$pop_sd/sqrt(nsample)),
+                     samp_se= compare$samp_se)
+compare_se <- compare_se |>
+  mutate(boot_se= case_when(
+    decade== "20s" ~ se_boot20,
+    decade== "30s" ~ se_boot30,
+    decade== "40s" ~ se_boot40,
+    decade== "50s" ~ se_boot50,
+    decade== "60s" ~ se_boot60,
+    decade== "70s" ~ se_boot70
+    ))
+compare_se
+```
