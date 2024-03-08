@@ -12,6 +12,9 @@ knitr::opts_chunk$set(warning= FALSE, message= FALSE)
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
+library(skimr)
+library(reshape)
+library(patchwork)
 ```
 
 ### loading in dataset as tibble
@@ -277,4 +280,235 @@ compare_se <- compare_se |>
     decade== "70s" ~ se_boot70
     ))
 compare_se
+```
+
+## CHALLENGE 2
+### load data
+```{r}
+x2 <- "https://raw.githubusercontent.com/difiore/ada-2024-datasets/main/zombies.csv"
+z <- read_csv(x2, col_names= TRUE)
+
+summary(z)
+
+N <- nrow(z)
+```
+
+### select relevant columns from dataframe then take their means and standard deviations (population)
+```{r}
+z_mut <<- z |>
+  select(height, weight, age, zombies_killed, years_of_education, gender, id)
+pop_mu_df <- (skim(z_mut))
+pop_mu_df <- pop_mu_df[10]
+pop_mu_df <- summarise(pop_mu_df,
+                       mu_h= pop_mu_df[2,1],
+                       mu_w= pop_mu_df[3,1],
+                       mu_a= pop_mu_df[4,1],
+                       mu_zk= pop_mu_df[5,1],
+                       mu_yoe= pop_mu_df[6,1])
+
+pop_sd_df <- (skim(z_mut))
+pop_sd_df <- pop_sd_df[11]
+pop_sd_df <- summarise(pop_sd_df, 
+                       sd_h= pop_sd_df[2,1], 
+                       sd_w= pop_sd_df[3,1], 
+                       sd_a= pop_sd_df[4,1], 
+                       sd_zk= pop_sd_df[5,1], 
+                       sd_yoe= pop_sd_df[6,1])
+```
+
+### plotting each factor split by gender and QQ Plots to evaluate normality
+```{r}
+p <- ggplot(z_mut, aes(x= gender,
+                       y= height,
+                       fill= gender)) +
+  geom_boxplot()
+
+p1 <- ggplot(z_mut, aes(x= gender,
+                       y= weight,
+                       fill= gender)) +
+  geom_boxplot()
+
+p2 <- ggplot(z_mut, aes(x= gender,
+                        y= age,
+                        fill= gender)) +
+  geom_boxplot()
+
+p3 <- ggplot(z_mut, aes(x= gender,
+                        y= zombies_killed,
+                        fill= gender)) +
+  geom_boxplot()
+
+p4 <- ggplot(z_mut, aes(x= gender,
+                        y= years_of_education,
+                        fill= gender)) +
+  geom_boxplot()
+
+(p_all <- (p | p1)/(p2 | p3)/(p4) + plot_annotation(tag_levels= "A"))
+
+s <- ggplot(z_mut, aes(x= age,
+                       y= height,
+                       color= gender)) +
+  geom_point()
+
+s1 <- ggplot(z_mut, aes(x= age,
+                        y= weight,
+                        color= gender)) +
+  geom_point()
+(s_wh <- (s / s1) + plot_annotation(tag_levels= "A"))
+
+q <- qqnorm(z_mut[[1]], pch= 1, frame= FALSE, main= paste(colnames(z_mut[1]), "Normal QQ Plot", sep= " "))
+qqline(z_mut[[1]], col= 'red', lwd= 2)
+h <- hist(z_mut[[1]], main= paste("Histogram of", colnames(z_mut[1]), sep= " "))
+
+q1 <- qqnorm(z_mut[[2]], pch= 1, frame= FALSE, main= paste(colnames(z_mut[2]), "Normal QQ Plot", sep= " "))
+qqline(z_mut[[2]], col= 'red', lwd= 2)
+h1 <- hist(z_mut[[2]], main= paste("Histogram of", colnames(z_mut[2]), sep= " "))
+
+q2 <- qqnorm(z_mut[[3]], pch= 1, frame= FALSE, main= paste(colnames(z_mut[3]), "Normal QQ Plot", sep= " "))
+qqline(z_mut[[3]], col= 'red', lwd= 2)
+h2 <- hist(z_mut[[3]], main= paste("Histogram of", colnames(z_mut[3]), sep= " "))
+
+q3 <- qqnorm(z_mut[[4]], pch= 1, frame= FALSE, main= paste(colnames(z_mut[4]), "Normal QQ Plot", sep= " "))
+qqline(z_mut[[4]], col= 'red', lwd= 2)
+h3 <- hist(z_mut[[4]], main= paste("Histogram of", colnames(z_mut[4]), sep= " "))
+
+q4 <- qqnorm(z_mut[[5]], pch= 1, frame= FALSE, main= paste(colnames(z_mut[5]), "Normal QQ Plot", sep= " "))
+qqline(z_mut[[5]], col= 'red', lwd= 2)
+h4 <- hist(z_mut[[5]], main= paste("Histogram of", colnames(z_mut[5]), sep= " "))
+```
+##### It appears that both zombies killed and years of education are not normally distributed, and instead exhibit a Poisson-like distribution
+
+### take a 50 datapoint sample and calulate mean, sd, and se for the sample, then generate a confidence interval
+```{r}
+samples <- z_mut[1:5]
+samples <- samples |>
+  slice_sample(n= 50, replace= FALSE)
+
+samp_mus_ch2 <- colMeans(samples)
+samp_sds_ch2 <- sapply(samples[1:5], sd)
+samp_mus_sds_ch2 <- data.frame(samp_mus_ch2, samp_sds_ch2)
+samp_mus_sds_ch2 <- samp_mus_sds_ch2 |>
+  mutate(samp_ses_ch2= (samp_sds_ch2/sqrt(50)))
+
+(lower <- samp_mus_ch2 + qnorm(0.05/2) * samp_mus_sds_ch2$samp_ses_ch2)
+(upper <- samp_mus_ch2 + qnorm(0.05/2, lower.tail = FALSE) * samp_mus_sds_ch2$samp_ses_ch2)
+
+ci <- tibble(lower, upper)
+
+samp_mus_sds_ch2 <- samp_mus_sds_ch2 |>
+  mutate(ci= paste(ci$lower, ci$upper, sep= ", "))
+```
+
+### take 199 more 50 datapoint samples and calculate mean, sd, and se for each variable
+```{r}
+num_samp <- 199
+samp_size= 50
+
+samp_dist_sum <- data.frame(samp_mu_h= numeric(num_samp),
+                            samp_sd_h= numeric(num_samp),
+                            samp_se_h= numeric(num_samp),
+                            samp_mu_w= numeric(num_samp),
+                            samp_sd_w= numeric(num_samp),
+                            samp_se_w= numeric(num_samp),
+                            samp_mu_a= numeric(num_samp),
+                            samp_sd_a= numeric(num_samp),
+                            samp_se_a= numeric(num_samp),
+                            samp_mu_zk= numeric(num_samp),
+                            samp_sd_zk= numeric(num_samp),
+                            samp_se_zk= numeric(num_samp),
+                            samp_mu_yoe= numeric(num_samp),
+                            samp_sd_yoe= numeric(num_samp),
+                            samp_se_yoe= numeric(num_samp))
+
+for (i in 1:num_samp){
+  sample_data <- slice_sample(z_mut, n= samp_size, replace= FALSE)
+  
+  # height
+  samp_mu_h <- mean(sample_data$height)
+  samp_sd_h <- sd(sample_data$height)
+  samp_se_h <- samp_sd_h/sqrt(samp_size)
+  
+  # weight
+  samp_mu_w <- mean(sample_data$weight)
+  samp_sd_w <- sd(sample_data$weight)
+  samp_se_w <- samp_sd_w/sqrt(samp_size)
+  
+  # age
+  samp_mu_a <- mean(sample_data$age)
+  samp_sd_a <- sd(sample_data$age)
+  samp_se_a <- samp_sd_a/sqrt(samp_size)
+  
+  # zombies killed
+  samp_mu_zk <- mean(sample_data$zombies_killed)
+  samp_sd_zk <- sd(sample_data$zombies_killed)
+  samp_se_zk <- samp_sd_zk/sqrt(samp_size)
+  
+  # years of education
+  samp_mu_yoe <- mean(sample_data$years_of_education)
+  samp_sd_yoe <- sd(sample_data$years_of_education)
+  samp_se_yoe <- samp_sd_yoe/sqrt(samp_size)
+  
+  samp_dist_sum[i, ] <- c(samp_mu_h,
+                          samp_sd_h,
+                          samp_se_h,
+                          samp_mu_w,
+                          samp_sd_w,
+                          samp_se_w,
+                          samp_mu_a,
+                          samp_sd_a,
+                          samp_se_a,
+                          samp_mu_zk,
+                          samp_sd_zk,
+                          samp_se_zk,
+                          samp_mu_yoe,
+                          samp_sd_yoe,
+                          samp_se_yoe)
+}
+```
+##### the standard deviations calculated by sampling distributions are a tiny bit larger than the sd caulcated for the single 50 datapoint sample
+
+### find the mean and standard deviation for each sampling distribution of each variable
+```{r}
+samp_dist_samp_mus_ch2 <- sapply(c(samp_mu_h, samp_mu_w, samp_mu_a, samp_mu_zk, samp_mu_yoe), mean)
+samp_dist_samp_mus_ch2 <- as_data_frame(samp_dist_samp_mus_ch2)
+
+samp_dist_samp_sds_ch2 <- sapply(c(samp_sd_h, samp_sd_w, samp_sd_a, samp_sd_zk, samp_sd_yoe), mean)
+samp_dist_samp_sds_ch2 <- as_data_frame(samp_dist_samp_sds_ch2)
+```
+
+### plot histograms of each sampling distribution of sample means
+```{r}
+hist(samp_dist_sum$samp_mu_h)
+hist(samp_dist_sum$samp_mu_w)
+hist(samp_dist_sum$samp_mu_a)
+hist(samp_dist_sum$samp_mu_zk)
+hist(samp_dist_sum$samp_mu_yoe)
+```
+##### all variable distributions look to be approximating a normal distribution, including zombies killed and years of education which were not previously normally distributed
+
+### calculating confidence intervals for each sampling distribution of sample means for each variable and comparing against the calculated population confidence intervals
+```{r}
+lower_samp_h <- quantile(samp_dist_sum$samp_mu_h, 0.025)
+upper_samp_h <- quantile(samp_dist_sum$samp_mu_h, 0.975)
+lower_samp_w <- quantile(samp_dist_sum$samp_mu_w, 0.025)
+upper_samp_w <- quantile(samp_dist_sum$samp_mu_w, 0.975)
+lower_samp_a <- quantile(samp_dist_sum$samp_mu_a, 0.025)
+upper_samp_a <- quantile(samp_dist_sum$samp_mu_a, 0.975)
+lower_samp_zk <- quantile(samp_dist_sum$samp_mu_zk, 0.025)
+upper_samp_zk <- quantile(samp_dist_sum$samp_mu_zk, 0.975)
+lower_samp_yoe <- quantile(samp_dist_sum$samp_mu_yoe, 0.025)
+upper_samp_yoe <- quantile(samp_dist_sum$samp_mu_yoe, 0.975)
+
+ci_samp_h <- paste(lower_samp_h, upper_samp_h, sep= ", ")
+ci_samp_w <- paste(lower_samp_w, upper_samp_w, sep= ", ")
+ci_samp_a <- paste(lower_samp_a, upper_samp_a, sep= ", ")
+ci_samp_zk <- paste(lower_samp_zk, upper_samp_zk, sep= ", ")
+ci_samp_yoe <- paste(lower_samp_yoe, upper_samp_yoe, sep= ", ")
+compare_cis <- data.frame(ci_samp_h, ci_samp_w, ci_samp_a, ci_samp_zk, ci_samp_yoe)
+
+rownames(ci) <- c("height", "weight", "age", "zombies_killed", "years_of_education")
+ci <- ci |>
+  mutate(variable= rownames(ci))
+(ci)
+(compare_cis)
 ```
